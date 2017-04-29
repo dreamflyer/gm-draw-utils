@@ -1,6 +1,6 @@
 {
   "name": "gm-draw-utils",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "main": "dist/index.js",
   "repository": {
     "type": "git",
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "compile": "rimraf dist && tsc",
-    "build": "npm install && npm run compile"
+    "build": "npm install && typings install && npm run compile"
   },
   "dependencies": {
     "typescript-compiler": "1.4.1-2",

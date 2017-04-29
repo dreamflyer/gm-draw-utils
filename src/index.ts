@@ -23,7 +23,7 @@ export class Polygon {
     }
 }
 
-export abstract class Region {
+export class Region {
     polys: Polygon[] = [];
 
     selection: Polygon[] = [];
