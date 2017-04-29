@@ -1,7 +1,11 @@
 {
   "name": "gm-draw-utils",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dreamflyer/gm-draw-utils.git"
+  },
   "scripts": {
     "compile": "rimraf dist && tsc",
     "build": "npm install && npm run compile"
