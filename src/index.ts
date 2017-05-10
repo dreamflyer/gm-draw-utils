@@ -7,6 +7,8 @@ var SELECTED_COLOR  = '#0000FF';
 
 export class Polygon {
     vertices: number[];
+    
+    displayListener: any = null;
 
     position: {
         x: number,
@@ -21,6 +23,18 @@ export class Polygon {
     transformate(start: {x: number, y: number}, end: {x: number, y: number}): void {
 
     }
+    
+    wheelScrolled(scrollEvent: any): void {
+        if(this.displayListener) {
+            this.displayListener({wheelEvent: scrollEvent});
+        }
+    }
+    
+    onDisplay(): void {
+        if(this.displayListener) {
+            this.displayListener({});
+        }
+    }
 }
 
 export class Region {
@@ -32,18 +46,28 @@ export class Region {
         shiftPressed: false,
 
         leftMousePressed: false,
+        middleMousePressed: false,
 
         rotationPressed: false,
         transformationPressed: false,
 
         drag: {
-            startAtPosition: {x: 0, y: 0},
-            lastPosition: {x: 0, y: 0}
-        }
+            startAtPosition: {x: 0, y: 0, screenX: 0, screenY: 0},
+            lastPosition: {x: 0, y: 0, screenX: 0, screenY: 0}
+        },
+
+        mousePosition: {x: 0, y: 0, screenX: 0, screenY: 0}
     }
 
     constructor(private map, private origin: {lat: number, lon: number}) {
         this.setupRegionListeners();
+    }
+    
+    changeOrigin(newOrigin: {lat: number, lon: number}) {
+        var shift = geoMathUtils.toXY(this.origin.lat, this.origin.lon, newOrigin.lat, newOrigin.lon);
+        this.origin = newOrigin;
+        
+        this.movePolygons(this.polys, {x: -shift.x, y: -shift.y});
     }
 
     getAllPolygons(): Polygon[] {
@@ -90,6 +114,14 @@ export class Region {
         polys.forEach(poly => {
             poly.position.x = poly.position.x + shift.x;
             poly.position.y = poly.position.y + shift.y;
+
+            this.displayPoly(poly);
+        });
+    }
+    
+    wheelScrolled(polys: Polygon[], event: any): void {
+        polys.forEach(poly => {
+            poly.wheelScrolled(event);
 
             this.displayPoly(poly);
         });
@@ -191,50 +223,104 @@ export class Region {
 
         div.addEventListener("mouseover", (event) => {
             div.focus();
+
+            return preventDefault(event);
         });
 
         div.addEventListener("mousedown", (event) => {
             if(event.which === 1) {
                 this.controlsState.leftMousePressed = true;
 
-                var currentPosition = this.getMousePosition(event);
+                this.setupDragStartPositions(event)
+            } else if(event.which === 2) {
+                this.controlsState.middleMousePressed = true;
 
-                this.controlsState.drag.startAtPosition = {x: currentPosition.x, y: currentPosition.y};
-                this.controlsState.drag.lastPosition = {x: currentPosition.x, y: currentPosition.y};
+                this.setupDragStartPositions(event);
             }
+
+            return preventDefault(event);
         });
 
         div.addEventListener("mouseup", (event) => {
             if(event.which === 1) {
                 this.controlsState.leftMousePressed = false;
+            } else if(event.which === 2) {
+                this.controlsState.middleMousePressed = false;
             }
+
+            return preventDefault(event);
+        });
+
+        div.addEventListener("mousewheel", (event) => {
+            var delta = event.deltaY;
+
+            this.wheelScrolled(this.selection, event);
+
+            return preventDefault(event);
         });
         
         div.addEventListener("mousemove", (event) => {
             if(this.controlsState.leftMousePressed && this.selection.length > 0) {
-                var regionPosition = this.getMousePosition(event);
+                this.setupMousePositions(event);
 
                 if(this.controlsState.rotationPressed) {
-                    this.rotatePolygons(this.selection, this.controlsState.drag.lastPosition, regionPosition);
+                    this.rotatePolygons(this.selection, this.controlsState.drag.lastPosition,  this.controlsState.mousePosition);
                 } else if(this.controlsState.transformationPressed) {
-                    this.transformPolygons(this.selection, this.controlsState.drag.lastPosition, regionPosition);
+                    this.transformPolygons(this.selection, this.controlsState.drag.lastPosition,  this.controlsState.mousePosition);
                 } else {
                     var positionShift = {
-                        x: regionPosition.x - this.controlsState.drag.lastPosition.x,
-                        y: regionPosition.y - this.controlsState.drag.lastPosition.y
+                        x: this.controlsState.mousePosition.x - this.controlsState.drag.lastPosition.x,
+                        y: this.controlsState.mousePosition.y - this.controlsState.drag.lastPosition.y
                     };
 
                     this.movePolygons(this.selection, positionShift);
                 }
 
-                this.controlsState.drag.lastPosition.x = regionPosition.x;
-                this.controlsState.drag.lastPosition.y = regionPosition.y;
+                this.setupDragLastPositions();
+            } else if(this.controlsState.middleMousePressed) {
+                this.setupMousePositions(event);
+                
+                var positionShift = {
+                    x: this.controlsState.mousePosition.screenX - this.controlsState.drag.lastPosition.screenX,
+                    y: this.controlsState.mousePosition.screenY - this.controlsState.drag.lastPosition.screenY
+                };
+                
+                this.map.panBy(-positionShift.x, -positionShift.y);
+                
+                this.setupDragLastPositions();
             }
+
+            return preventDefault(event);
         });
         
         this.setupKey('Shift', 'shiftPressed');
         this.setupKey('KeyR', 'rotationPressed');
         this.setupKey('KeyT', 'transformationPressed');
+    }
+
+    private setupMousePositions(event: any): void {
+        var currentPosition = this.getMousePosition(event);
+        var currentScreenPosition = this.getMouseScreenPosition(event);
+
+        this.controlsState.mousePosition.x = currentPosition.x;
+        this.controlsState.mousePosition.y = currentPosition.y;
+        this.controlsState.mousePosition.screenX = currentScreenPosition.x;
+        this.controlsState.mousePosition.screenY = currentScreenPosition.y;
+    }
+
+    private setupDragStartPositions(event: any): void {
+        var currentPosition = this.getMousePosition(event);
+        var currentScreenPosition = this.getMouseScreenPosition(event);
+
+        this.controlsState.drag.startAtPosition = {x: currentPosition.x, y: currentPosition.y, screenX: currentScreenPosition.x, screenY: currentScreenPosition.y};
+        this.controlsState.drag.lastPosition = {x: currentPosition.x, y: currentPosition.y, screenX: currentScreenPosition.x, screenY: currentScreenPosition.y};
+    }
+
+    private setupDragLastPositions(): void {
+        this.controlsState.drag.lastPosition.x = this.controlsState.mousePosition.x;
+        this.controlsState.drag.lastPosition.y = this.controlsState.mousePosition.y;
+        this.controlsState.drag.lastPosition.screenX = this.controlsState.mousePosition.screenX;
+        this.controlsState.drag.lastPosition.screenY = this.controlsState.mousePosition.screenY;
     }
 
     private setupKey(code: string, inputFlagName: string, toggle?: boolean): void {
@@ -244,12 +330,16 @@ export class Region {
             if(event.key === code || event.code === code) {
                 this.controlsState[inputFlagName] = true;
             }
+
+            return preventDefault(event);
         });
 
         div.addEventListener("keyup", (event) => {
             if(event.key === code || event.code === code) {
                 this.controlsState[inputFlagName] = false;
             }
+
+            return preventDefault(event);
         });
     }
     
@@ -292,6 +382,8 @@ export class Region {
         });
 
         (<any>poly).gPoly = gPoly;
+
+        poly.onDisplay();
     }
 
     private hidePoly(poly: Polygon): void {
@@ -312,6 +404,15 @@ export class Region {
 
         return geoMathUtils.toXY(this.origin.lat, this.origin.lon, mapPosition.lat(), mapPosition.lng());
     }
+
+    private getMouseScreenPosition(event: any): {x: number, y: number} {
+        var point = {
+            x: event.offsetX,
+            y: event.offsetY
+        }
+
+        return point;
+    }
 }
 
 export class Rectangle extends Polygon {
@@ -329,7 +430,7 @@ export class Rectangle extends Polygon {
         bottom: ['left-bottom', 'right-bottom', 'height', -1]
     }
 
-    constructor(private bounds: {width: number, height: number}, position: {x: number, y: number}) {
+    constructor(public bounds: {width: number, height: number}, position: {x: number, y: number}) {
         super();
         
         this.position = position;
@@ -369,6 +470,10 @@ export class Rectangle extends Polygon {
         relativeEnd = rotateVector(relativeEnd, sin, cos);
 
         var deltas = this.getDeltas(relativeStart, relativeEnd);
+        
+        if(!deltas) {
+            return;
+        }
 
         this.bounds.width += deltas.width;
         this.bounds.height += deltas.height;
@@ -451,7 +556,9 @@ function getRotation(position, dragStart, dragEnd) {
     var l1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
     var l2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
 
-    return (<any>Math).sign(v1.x * v2.y - v1.y * v2.x) * Math.acos(dot(v1, v2) / (l1 * l2));
+    var result = (<any>Math).sign(v1.x * v2.y - v1.y * v2.x) * Math.acos(dot(v1, v2) / (l1 * l2));
+
+    return result || 0;
 }
 
 function rotateVectorAround(vector, around, sin, cos) {
@@ -514,3 +621,10 @@ function isPointBetween(v1, v2, point) {
     
     return false;
 }
+
+function preventDefault(event): boolean {
+    event.stopPropagation();
+    event.preventDefault();
+    
+    return false;
+};
